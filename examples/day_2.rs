@@ -1,39 +1,48 @@
+use std::error::Error;
 use std::io::{prelude::*, BufReader};
 use std::{fs::File, str::FromStr};
 
 fn main() {
-
     let match_count_policy_check = |line: &str| {
-        let pw: Password<MatchCountPolicy> = Password::from_str(line).unwrap();
-        return pw.is_valid();
+        if let Ok(pw) = Password::<MatchCountPolicy>::from_str(line) {
+            pw.is_valid()
+        } else {
+            false
+        }
     };
-    println!(
-        "part 1: {} valid passwords\r\n",
-        count_valid_password_in_file("input/2.txt", match_count_policy_check)
-    );
+
+    match count_valid_password_in_file("input/2.txt", match_count_policy_check) {
+        Ok(valid_password_count) => {
+            println!("part 1: {} valid passwords\r\n", valid_password_count)
+        }
+        Err(err) => println!("part 1: fail due to {}\r\n", err.to_string()),
+    }
 
     let match_position_policy_check = |line: &str| {
-        let pw: Password<PositionPolicy> = Password::from_str(line).unwrap();
-        return pw.is_valid();
+        if let Ok(pw) = Password::<PositionPolicy>::from_str(line) {
+            pw.is_valid()
+        } else {
+            false
+        }
     };
-    println!(
-        "part 2: {} valid passwords",
-        count_valid_password_in_file("input/2.txt", match_position_policy_check)
-    );
+    match count_valid_password_in_file("input/2.txt", match_position_policy_check) {
+        Ok(valid_password_count) => {
+            println!("part 1: {} valid passwords", valid_password_count)
+        }
+        Err(err) => println!("part 2: fail due to {}", err.to_string()),
+    }
 }
 
-fn count_valid_password_in_file(path: &str, f: fn(&str) -> bool) -> usize {
-    let mut count = 0;
-    let file = File::open(path).unwrap();
-    let reader = BufReader::new(file);
-    for line in reader.lines() {
-        if let Ok(line) = line {
-            if f(&line) {
-                count += 1;
-            }
-        }
-    }
-    count
+fn count_valid_password_in_file(
+    path: &str,
+    is_valid: fn(&str) -> bool,
+) -> Result<usize, Box<dyn Error>> {
+    let file = File::open(path)?;
+    Ok(BufReader::new(file)
+        .lines()
+        .filter_map(|x| x.ok())
+        .filter(|l| is_valid(&l))
+        .count())
 }
 
 #[derive(Debug)]
@@ -47,7 +56,11 @@ impl FromStr for MatchCountPolicy {
     type Err = String;
 
     fn from_str(raw: &str) -> Result<Self, Self::Err> {
-        let elements = raw.split_whitespace().into_iter().collect::<Vec<&str>>();
+        let elements = raw
+            .split_whitespace()
+            .into_iter()
+            .map(|x| x.trim())
+            .collect::<Vec<&str>>();
         if elements.len() != 2 {
             return Err(String::from("Invalid input"));
         }
@@ -55,18 +68,26 @@ impl FromStr for MatchCountPolicy {
         if pattern.len() != 1 {
             return Err(String::from("Invalid input"));
         }
-        let pattern = pattern[0];
 
         let range_elements = elements[0]
-            .trim()
             .split('-')
-            .map(|e| e.trim().parse().unwrap())
-            .collect::<Vec<usize>>();
+            .map(|e| e.trim())
+            .collect::<Vec<&str>>();
+
+        let min_occurs: usize = match range_elements[0].parse() {
+            Ok(num) => num,
+            Err(err) => return Err(err.to_string()),
+        };
+
+        let max_occurs: usize = match range_elements[1].parse() {
+            Ok(num) => num,
+            Err(err) => return Err(err.to_string()),
+        };
 
         Ok(MatchCountPolicy {
-            pattern,
-            min_occurs: range_elements[0],
-            max_occurs: range_elements[1],
+            pattern: pattern[0],
+            min_occurs,
+            max_occurs,
         })
     }
 }
@@ -83,21 +104,34 @@ impl FromStr for PositionPolicy {
 
     fn from_str(raw: &str) -> Result<Self, Self::Err> {
         let elements = raw.split_whitespace().into_iter().collect::<Vec<&str>>();
-        assert_eq!(elements.len(), 2);
+        if elements.len() != 2 {
+            return Err(String::from("Invalid input"));
+        }
         let pattern = elements[1].trim().chars().collect::<Vec<char>>();
-        assert_eq!(pattern.len(), 1);
+        if pattern.len() != 1 {
+            return Err(String::from("Invalid input"));
+        }
         let pattern = pattern[0];
 
         let range_elements = elements[0]
-            .trim()
             .split('-')
-            .map(|e| e.trim().parse().unwrap())
-            .collect::<Vec<usize>>();
+            .map(|e| e.trim())
+            .collect::<Vec<&str>>();
+
+        let position_1: usize = match range_elements[0].parse() {
+            Ok(num) => num,
+            Err(err) => return Err(err.to_string()),
+        };
+
+        let position_2: usize = match range_elements[1].parse() {
+            Ok(num) => num,
+            Err(err) => return Err(err.to_string()),
+        };
 
         Ok(PositionPolicy {
             pattern,
-            position_1: range_elements[0],
-            position_2: range_elements[1],
+            position_1,
+            position_2,
         })
     }
 }
@@ -126,18 +160,8 @@ impl FromStr for Password<PositionPolicy> {
 impl ValidCheck for Password<PositionPolicy> {
     fn is_valid(&self) -> bool {
         let chars = self.password_text.chars().collect::<Vec<char>>();
-        let mut match_count = 0;
-        if chars[self.policy.position_1 - 1] == self.policy.pattern {
-            match_count += 1;
-        }
-        if chars[self.policy.position_2 - 1] == self.policy.pattern {
-            match_count += 1;
-        }
-
-        if match_count != 1 {
-            return false;
-        }
-        true
+        (chars[self.policy.position_1 - 1] == self.policy.pattern)
+            != (chars[self.policy.position_2 - 1] == self.policy.pattern)
     }
 }
 
