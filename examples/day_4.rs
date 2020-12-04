@@ -4,7 +4,22 @@ use std::{
     io::{prelude::*, BufReader},
 };
 
-fn main() {
+macro_rules! map_or_else {
+    ($o: expr, $s:expr, $n: expr) => {
+        match $o {
+            Some(a) => $s(a),
+            None => $n,
+        }
+    };
+}
+
+fn main() -> Result<(), String> {
+    let lines = match read_input("input/4.txt") {
+        Ok(lines) => lines,
+        Err(err) => {
+            return Err(format!("Could not read the input file due to {}", err.to_string()));
+        }
+    };
     let required_fields: [String; 7] = [
         String::from("byr"),
         String::from("iyr"),
@@ -15,29 +30,33 @@ fn main() {
         String::from("pid"),
     ];
     let valid_passport_count =
-        count_valid_password("input/4.txt", &required_fields, &have_required_fields);
+        count_valid_password(&lines, &required_fields, &have_required_fields);
     println!("Part 1: {} valid passports", valid_passport_count);
 
     println!("=============================");
     let valid_passport_count =
-        count_valid_password("input/4.txt", &required_fields, &have_valid_required_fields);
+        count_valid_password(&lines, &required_fields, &have_valid_required_fields);
     println!("Part 2: {} valid passports", valid_passport_count);
+
+    Ok(())
 }
 fn have_required_fields(pp: &HashMap<String, String>, required_fields: &[String]) -> bool {
     required_fields.iter().all(|i| pp.contains_key(i))
 }
 
+fn read_input(path: &str) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    let file = File::open(path)?;
+    Ok(BufReader::new(file)
+        .lines()
+        .filter_map(|x| x.ok())
+        .collect::<Vec<String>>())
+}
+
 fn count_valid_password(
-    path: &str,
+    lines: &Vec<String>,
     required_fields: &[String],
     f: &dyn Fn(&HashMap<String, String>, &[String]) -> bool,
 ) -> usize {
-    let file = File::open(path).unwrap();
-    let lines = BufReader::new(file)
-        .lines()
-        .filter_map(|x| x.ok())
-        .collect::<Vec<String>>();
-
     let mut passport: HashMap<String, String> = HashMap::new();
     let mut count = 0;
     for line in lines {
@@ -59,18 +78,14 @@ fn count_valid_password(
     count
 }
 
-fn have_valid_required_fields(pp: &HashMap<String, String>, required_fields: &[String]) -> bool {
-    if !have_required_fields(pp, required_fields) {
-        return false;
-    }
-
-    is_valid_birth_year(pp.get("byr").unwrap())
-        && is_valid_issue_year(pp.get("iyr").unwrap())
-        && is_valid_exprire_year(pp.get("eyr").unwrap())
-        && is_valid_height(pp.get("hgt").unwrap())
-        && is_valid_hair_color(pp.get("hcl").unwrap())
-        && is_valid_eye_color(pp.get("ecl").unwrap())
-        && is_valid_pid(pp.get("pid").unwrap())
+fn have_valid_required_fields(pp: &HashMap<String, String>, _: &[String]) -> bool {
+    map_or_else!(pp.get("byr"), &is_valid_birth_year, false)
+        && map_or_else!(pp.get("iyr"), &is_valid_issue_year, false)
+        && map_or_else!(pp.get("eyr"), &is_valid_exprire_year, false)
+        && map_or_else!(pp.get("hgt"), &is_valid_height, false)
+        && map_or_else!(pp.get("hcl"), &is_valid_hair_color, false)
+        && map_or_else!(pp.get("ecl"), &is_valid_eye_color, false)
+        && map_or_else!(pp.get("pid"), &is_valid_pid, false)
 }
 
 fn is_valid_pid(pid: &str) -> bool {
@@ -95,27 +110,22 @@ fn is_valid_hair_color(hcl: &str) -> bool {
         return false;
     }
     let allowed_characters = "0123456789abcdef";
-    hcl.get(1..7)
-        .unwrap()
-        .chars()
-        .all(|c| allowed_characters.contains(c))
+    hcl.chars().skip(1).all(|c| allowed_characters.contains(c))
 }
 
 fn is_valid_height(hgt: &str) -> bool {
-    let len = hgt.len();
-    if len < 3 {
-        return false;
-    }
-    let height = hgt.get(0..len - 2).unwrap().parse::<usize>().unwrap();
-    if hgt.ends_with("in") {
-        height >= 59 && height <= 76
-    } else {
-        if hgt.ends_with("cm") {
-            height >= 150 && height <= 193
-        } else {
-            false
+    if let Some(height) = hgt.get(0..hgt.len() - 2) {
+        if let Ok(height) = height.parse::<usize>() {
+            if hgt.ends_with("in") {
+                return height >= 59 && height <= 76;
+            } else {
+                if hgt.ends_with("cm") {
+                    return height >= 150 && height <= 193;
+                }
+            }
         }
     }
+    false
 }
 
 fn is_valid_exprire_year(eyr: &str) -> bool {
